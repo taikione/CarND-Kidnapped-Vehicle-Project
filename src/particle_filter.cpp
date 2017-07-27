@@ -26,6 +26,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
     num_particles = 100;
+	vechile_direction = theta;
 
 	default_random_engine rand_value;
 
@@ -90,6 +91,45 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	double max_weight = 0;
+
+	// Transrate OBS to each observation
+    for(int i; i<num_particles; ++i){
+      	vector<double> translated_obs_x; // vector of translated obs x element
+		vector<double> translated_obs_y; // vector of translated obs y element
+        vector<int> associations;
+      	weights.clear();
+
+       	// Transrate single OBS and get nearest landmark
+		for(int obs_index; obs_index<observations.size(); ++obs_index){
+            double heading = vechile_direction - particles[i].theta;
+			double x = particles[i].x + observations[i].x * cos(heading) - particles[i].y * sin(heading);
+			double y = particles[i].y + observations[i].x * sin(heading) + particles[i].y * cos(heading);
+            translated_obs_x.push_back(x);
+			translated_obs_y.push_back(y);
+
+            //associations.push_back(GetNearestLandmark(x, y, map));
+          	Map::single_landmark_s nearest_landmark = GetNearestLandmark(x, y, map_landmarks);
+			associations.push_back(nearest_landmark.id_i);
+
+			double weight = multivariate_gausian(x, y, nearest_landmark.x_f, nearest_landmark.y_f);
+          	weights.push_back(weight);
+		}
+		SetAssociations(particles[i], associations, translated_obs_x, translated_obs_y);
+
+		// Calculate the particle final weight
+		double final_weight = 1;
+		for(int i=0; i<weights.size(); ++i){
+			final_weight *= weights[i];
+		}
+
+		particles[i].weight = final_weight;
+
+		if(final_weight > max_weight){
+			vechile_direction = particles[i].theta;
+		}
+	}
 }
 
 void ParticleFilter::resample() {
@@ -144,4 +184,21 @@ string ParticleFilter::getSenseY(Particle best)
     string s = ss.str();
     s = s.substr(0, s.length()-1);  // get rid of the trailing space
     return s;
+}
+
+Map::single_landmark_s ParticleFilter::GetNearestLandmark(double x, double y, Map map) {
+	double min_distance = 1000000;
+	//int nearest_landmark = 0;
+	Map::single_landmark_s nearest_landmark;
+
+	for(int i=0; i<map.landmark_list.size(); ++i){
+		double distance = dist(x, y, map.landmark_list[i].x_f, map.landmark_list[i].y_f);
+        if(distance < min_distance){
+          	min_distance = distance;
+			//nearest_landmark = map.landmark_list[i].id_i;
+			nearest_landmark = map.landmark_list[i];
+		}
+	}
+
+	return nearest_landmark;
 }

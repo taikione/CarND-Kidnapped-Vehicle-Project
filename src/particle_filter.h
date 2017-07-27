@@ -10,6 +10,7 @@
 #define PARTICLE_FILTER_H_
 
 #include "helper_functions.h"
+#include "map.h"
 
 struct Particle {
 
@@ -28,10 +29,11 @@ struct Particle {
 class ParticleFilter {
 	
 	// Number of particles to draw
-	int num_particles; 
-	
-	
-	
+	int num_particles;
+
+  	// Vechile direction
+  	double vechile_direction;
+
 	// Flag, if filter is initialized
 	bool is_initialized;
 	
@@ -114,6 +116,11 @@ public:
 	const bool initialized() const {
 		return is_initialized;
 	}
+
+    /*
+     * Nearest neighbor search for landmarks
+     */
+    Map::single_landmark_s GetNearestLandmark(double x, double y, Map map);
 };
 
 
