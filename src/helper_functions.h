@@ -53,9 +53,7 @@ inline double dist(double x1, double y1, double x2, double y2) {
 	return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
-inline double multivariate_gausian(double x, double y, double mx, double my){
-	double sigma_x = 0.3;
-	double sigma_y = 0.3;
+inline double multivariate_gausian(double x, double y, double mx, double my, double sigma_x, double sigma_y){
 
 	double p = 1/(2*M_PI*sigma_x*sigma_y);
 	double l = (x-mx)*(x-mx) / (2*sigma_x*sigma_x) + (y-my)*(y-my) / (2*sigma_y*sigma_y);

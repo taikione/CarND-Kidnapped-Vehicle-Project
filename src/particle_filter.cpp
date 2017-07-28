@@ -20,13 +20,8 @@
 using namespace std;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
-	// TODO: Set the number of particles. Initialize all particles to first position (based on estimates of 
-	//   x, y, theta and their uncertainties from GPS) and all weights to 1. 
-	// Add random Gaussian noise to each particle.
-	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
     num_particles = 100;
-	vechile_direction = theta;
 
 	default_random_engine rand_value;
 
@@ -50,10 +45,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
-	// TODO: Add measurements to each particle and add random Gaussian noise.
-	// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
-	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
-	//  http://www.cplusplus.com/reference/random/default_random_engine/
 
 	default_random_engine rand_value;
 
@@ -62,93 +53,77 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	normal_distribution<double> dist_theta(0, std_pos[2]);
 
     for(int i=0; i<num_particles; ++i){
-      	double v_div_t = velocity/yaw_rate;
-		double previouse_theta = particles[i].theta;
 
-      	particles[i].theta = particles[i].theta + yaw_rate * delta_t + dist_theta(rand_value);
-		particles[i].x = particles[i].x + v_div_t * (sin(particles[i].theta) - sin(previouse_theta)) + dist_x(rand_value);
-		particles[i].y = particles[i].y + v_div_t * (cos(previouse_theta) - cos(particles[i].theta)) + dist_y(rand_value);
+		if(fabs(yaw_rate) < 0.00001) {
+
+			particles[i].x += delta_t*cos(particles[i].theta);
+			particles[i].y += delta_t*sin(particles[i].theta);
+
+		} else {
+			double v_div_t = velocity/yaw_rate;
+
+			particles[i].x += v_div_t * (sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta));
+			particles[i].y += v_div_t * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate * delta_t));
+			particles[i].theta += yaw_rate * delta_t;
+		}
+
+		particles[i].x += dist_x(rand_value);
+		particles[i].y += dist_y(rand_value);
+		particles[i].theta += dist_theta(rand_value);
 	}
 }
 
-void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
-	// TODO: Find the predicted measurement that is closest to each observed measurement and assign the 
-	//   observed measurement to this particular landmark.
-	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
-	//   implement this method and use it as a helper during the updateWeights phase.
-
-}
-
-void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
+void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		std::vector<LandmarkObs> observations, Map map_landmarks) {
-	// TODO: Update the weights of each particle using a mult-variate Gaussian distribution. You can read
-	//   more about this distribution here: https://en.wikipedia.org/wiki/Multivariate_normal_distribution
-	// NOTE: The observations are given in the VEHICLE'S coordinate system. Your particles are located
-	//   according to the MAP'S coordinate system. You will need to transform between the two systems.
-	//   Keep in mind that this transformation requires both rotation AND translation (but no scaling).
-	//   The following is a good resource for the theory:
-	//   https://www.willamette.edu/~gorr/classes/GeneralGraphics/Transforms/transforms2d.htm
-	//   and the following is a good resource for the actual equation to implement (look at equation 
-	//   3.33
-	//   http://planning.cs.uiuc.edu/node99.html
 
-	double max_weight = 0;
+	weights.clear();
 
 	// Transrate OBS to each observation
     for(int i; i<num_particles; ++i){
-      	vector<double> translated_obs_x; // vector of translated obs x element
-		vector<double> translated_obs_y; // vector of translated obs y element
+      	vector<double> translated_x_vector; // vector of translated obs x element
+		vector<double> translated_y_vector; // vector of translated obs y element
         vector<int> associations;
-      	weights.clear();
+
+		double single_particle_weight = 1.0;
 
        	// Transrate single OBS and get nearest landmark
-		for(int obs_index; obs_index<observations.size(); ++obs_index){
-            double heading = vechile_direction - particles[i].theta;
-			double x = particles[i].x + observations[i].x * cos(heading) - particles[i].y * sin(heading);
-			double y = particles[i].y + observations[i].x * sin(heading) + particles[i].y * cos(heading);
-            translated_obs_x.push_back(x);
-			translated_obs_y.push_back(y);
+		for(int obs_index=0; obs_index<observations.size(); ++obs_index){
 
-            //associations.push_back(GetNearestLandmark(x, y, map));
-          	Map::single_landmark_s nearest_landmark = GetNearestLandmark(x, y, map_landmarks);
+			const double heading = particles[i].theta;
+			const double translated_x = particles[i].x + (observations[obs_index].x * cos(heading) - observations[obs_index].y * sin(heading));
+			const double translated_y = particles[i].y + (observations[obs_index].x * sin(heading) + observations[obs_index].y * cos(heading));
+            translated_x_vector.push_back(translated_x);
+			translated_y_vector.push_back(translated_y);
+
+			// Init nearest landmark
+          	Map::single_landmark_s nearest_landmark = getNearestLandmark(sensor_range, translated_x, translated_y, map_landmarks);
+
 			associations.push_back(nearest_landmark.id_i);
 
-			double weight = multivariate_gausian(x, y, nearest_landmark.x_f, nearest_landmark.y_f);
-          	weights.push_back(weight);
-		}
-		SetAssociations(particles[i], associations, translated_obs_x, translated_obs_y);
+			double weight = multivariate_gausian(translated_x, translated_y, nearest_landmark.x_f, nearest_landmark.y_f, std_landmark[0], std_landmark[1]);
 
-		// Calculate the particle final weight
-		double final_weight = 1;
-		for(int i=0; i<weights.size(); ++i){
-			final_weight *= weights[i];
+			// Calculate the particle final weight
+			single_particle_weight *= weight;
 		}
 
-		particles[i].weight = final_weight;
+		SetAssociations(particles[i], associations, translated_x_vector, translated_y_vector);
 
-		if(final_weight > max_weight){
-			vechile_direction = particles[i].theta;
-		}
+		//std::cout << "single_particle_weight : " << single_particle_weight << std::endl;
+		particles[i].weight = single_particle_weight;
+		weights.push_back(single_particle_weight);
 	}
+
 }
 
 void ParticleFilter::resample() {
-	// TODO: Resample particles with replacement with probability proportional to their weight. 
-	// NOTE: You may find std::discrete_distribution helpful here.
-	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
+
 	std::vector<Particle> resampled_particles;
 	default_random_engine rand_value;
 
-	weights.clear();
-	for(int i=0; i<num_particles; ++i) {
-      	weights.push_back(particles[i].weight);
-	}
-
-	std::discrete_distribution<> dist(weights.begin(), weights.end());
+	std::discrete_distribution<std::size_t> dist_resamaple(weights.begin(), weights.end());
 
   	for(int i=0; i<num_particles; ++i) {
-		int index = dist(rand_value);
-		resampled_particles.push_back(particles[index]);
+		resampled_particles.push_back(particles[dist_resamaple(rand_value)]);
 	}
 
   	particles.clear();
@@ -202,16 +177,17 @@ string ParticleFilter::getSenseY(Particle best)
     return s;
 }
 
-Map::single_landmark_s ParticleFilter::GetNearestLandmark(double x, double y, Map map) {
-	double min_distance = 1000000;
-	//int nearest_landmark = 0;
-	Map::single_landmark_s nearest_landmark;
+Map::single_landmark_s ParticleFilter::getNearestLandmark(double range, double x, double y, Map map) {
 
-	for(int i=0; i<map.landmark_list.size(); ++i){
+	double min_distance = dist(x, y, map.landmark_list[0].x_f, map.landmark_list[0].y_f);
+	Map::single_landmark_s nearest_landmark = map.landmark_list[0];
+
+	for(int i=1; i<map.landmark_list.size(); ++i){
+
 		double distance = dist(x, y, map.landmark_list[i].x_f, map.landmark_list[i].y_f);
-        if(distance < min_distance){
+
+        if(distance < min_distance && distance < range){
           	min_distance = distance;
-			//nearest_landmark = map.landmark_list[i].id_i;
 			nearest_landmark = map.landmark_list[i];
 		}
 	}
